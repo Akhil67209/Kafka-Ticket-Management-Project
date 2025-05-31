@@ -1,0 +1,48 @@
+How to connect to Kafka:
+Step 1: Check your Kafka Docker container setup
+    *   docker ps -f name=kafka-kraft
+    Make sure:
+        Container is running
+        Port 9092 is mapped (e.g., 0.0.0.0:9092->9092/tcp)
+
+Step 2: Check Kafka container logs for listener info
+    *   docker logs kafka-kraft --tail 20
+    Look for lines mentioning:
+        advertised.listeners
+        listeners
+        Any binding errors
+
+Step 3: Test if Kafka port is accessible from your Windows host
+    *   Test-NetConnection -ComputerName localhost -Port 9092
+    If this is TcpTestSucceeded: True, it means your Windows host can talk to Kafka on port 9092.
+
+Step 4: Adjust Kafka Docker environment variables if needed
+    If your container was originally created with host.docker.internal, you need to:
+    Stop and remove the container:
+    *   docker rm -f kafka-kraft
+
+    Re-run the container with localhost in KAFKA_CFG_ADVERTISED_LISTENERS like this:
+    *   docker run -d --name kafka-kraft `
+            -p 9092:9092 `
+            -e KAFKA_CFG_NODE_ID=1 `
+            -e KAFKA_CFG_PROCESS_ROLES=broker,controller `
+            -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 `
+            -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 `
+            -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 `
+            -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER `
+            -e ALLOW_PLAINTEXT_LISTENER=yes `
+            bitnami/kafka:3.4.0
+
+Step 5: Update your Go code to use localhost for the Kafka broker
+    *   writer := kafka.NewWriter(kafka.WriterConfig{
+            Brokers: []string{"localhost:9092"},
+            Topic:   "ticket-topic",
+        })
+
+Step 6: Create the topic inside the container
+    *   docker exec -it kafka-kraft kafka-topics.sh --create --topic ticket-topic --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+    Then check topics:
+    *   docker exec -it kafka-kraft kafka-topics.sh --list --bootstrap-server localhost:9092
+
+Step 7: Run your Go app again
+    *   go run main.go
